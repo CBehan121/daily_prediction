@@ -1,0 +1,57 @@
+name: Daily Insider Trading Predictions
+
+on:
+  schedule:
+    # Run daily at 9:00 AM UTC (adjust timezone as needed)
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allow manual runs
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run predictions
+      run: |
+        python predict_today_trades.py
+      env:
+        # Add any environment variables if needed
+        PYTHONUNBUFFERED: 1
+        
+    - name: Upload results as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: prediction-results
+        path: predicted_trades_*.csv
+        
+    - name: Send email notification (optional)
+      if: always()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.MAIL_USERNAME }}
+        password: ${{ secrets.MAIL_PASSWORD }}
+        subject: Daily Insider Trading Predictions
+        to: ${{ secrets.MAIL_TO }}
+        from: ${{ secrets.MAIL_USERNAME }}
+        body: |
+          Daily insider trading predictions have been completed.
+          
+          Check the GitHub Actions artifacts for detailed results.
+          
+          Repository: ${{ github.repository }}
+          Run ID: ${{ github.run_id }} 
