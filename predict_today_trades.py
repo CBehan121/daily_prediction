@@ -134,7 +134,7 @@ class TodayInsiderPredictor:
     def load_fundamental_data(self):
         """Load fundamental data for all tickers."""
         try:
-            self.fundamental_data = pd.read_csv('up-to-date/stock_fundamentals.csv')
+            self.fundamental_data = pd.read_csv('stock_fundamentals.csv')
             self.logger.info(f"Loaded fundamental data for {len(self.fundamental_data)} tickers")
         except FileNotFoundError:
             self.logger.warning("Fundamental data not found. Will skip fundamental features.")
