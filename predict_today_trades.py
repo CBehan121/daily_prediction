@@ -568,7 +568,7 @@ class TodayInsiderPredictor:
         """Make predictions using the custom threshold."""
         probs = self.model.predict_proba(X)[:, 1]
         predictions = (probs >= self.threshold).astype(int)
-        self.check_importance(probs, predictions)
+        #self.check_importance(probs, predictions)
         return predictions, probs
 
 def main():
