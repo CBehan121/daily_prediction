@@ -168,6 +168,8 @@ class TodayInsiderPredictor:
                     required_cols = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
                     if all(col in df.columns for col in required_cols):
                         # Set Date as index
+                        print('In get historical prices')
+                        print(df.columns)
                         df.set_index('Date', inplace=True)
                         self.prices_by_ticker[ticker] = df
                         valid_tickers.append(ticker)
@@ -411,6 +413,8 @@ class TodayInsiderPredictor:
             price = float(re.sub(r'[\$,]', '', entry['Price']))
             ticker = entry['Ticker']
             possible_end_dates = self.return_date_range(entry['Filing Date'], False, 5 )
+            print('In Count')
+            print(historical_prices.columns)
             historical_prices_filtered = (historical_prices.loc[(historical_prices['Date'].isin(possible_end_dates)) &
                                        (historical_prices["Ticker"] == ticker)]).sort_values('High', ascending=True)
             if not historical_prices_filtered.empty:
