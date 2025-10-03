@@ -24,6 +24,12 @@ jobs:
         curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
              "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/historical_prices_3.csv/raw?ref=main" \
              -o historical_prices_3.csv
+    - name: Pull stock fundamentals CSV
+      run: |
+        echo "Fetching CSV from private GitLab repo..."
+        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
+             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/stock_fundamentals.csv/raw?ref=main" \
+             -o stock_fundamentals.csv
     - name: Checkout code
       uses: actions/checkout@v3
       
