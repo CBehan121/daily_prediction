@@ -2,7 +2,9 @@
 predict_today_trades.py
 Script to fetch today's insider trades, process them, and predict which ones are likely to result in price increases.
 """
-
+import traceback
+import linecache
+import re
 import requests
 import pandas as pd
 import numpy as np
@@ -16,6 +18,7 @@ from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
+from xgboost import plot_importance
 
 class TodayInsiderPredictor:
     """
@@ -83,21 +86,19 @@ class TodayInsiderPredictor:
     def fetch_today_trades(self):
         """Fetch today's insider trades from OpenInsider."""
         today = datetime.now().strftime('%Y-%m-%d')
-        
+        yesterday = (datetime.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
         # URL for insider buys filed today (more specific filtering)
-        url = f"http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd={today}&fdr={today}&is=1&td=0&fdlyl=&fdlyh=&daysago=&xp=1"
-        
-        self.logger.info(f"Fetching trades filed on {today} from: {url}")
+        url = f"http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd={yesterday}&fdr={today}&is=1&td=0&fdlyl=&fdlyh=&daysago=&xp=1"
+        self.logger.info(f"Fetching trades filed from {yesterday} to {today} from: {url}")
         response = self.session.get(url, timeout=30)
         response.raise_for_status()
-        
         # Parse the HTML table
         tables = pd.read_html(StringIO(response.text))
         df = tables[11]  # 11th table contains the data
         df.columns = df.columns.str.replace('\xa0', ' ').str.strip()
-        
+       
         if df.empty:
-            self.logger.info(f"No trades filed on {today} found.")
+            self.logger.info(f"No trades filed on {today} or {yesterday} found.")
             return pd.DataFrame()
         
         # Debug: Show what we got
@@ -107,22 +108,23 @@ class TodayInsiderPredictor:
             self.logger.info(f"Sample filing dates: {df['Filing Date'].head().tolist()}")
         
         # Additional filtering to ensure we only get trades filed today
+        
         if 'Filing Date' in df.columns:
             df['Filing Date'] = pd.to_datetime(df['Filing Date'])
             today_dt = pd.to_datetime(today)
-            
+            yesterday_dt = pd.to_datetime(yesterday)
             # Filter for exact date match
-            df_filtered = df[df['Filing Date'].dt.date == today_dt.date()]
+            df_filtered = df[(df['Filing Date'].dt.date == today_dt.date()) | (df['Filing Date'].dt.date == yesterday_dt.date())]
             
-            self.logger.info(f"After filtering for {today}: {len(df_filtered)} trades")
+            self.logger.info(f"After filtering for {today} / {yesterday}: {len(df_filtered)} trades")
             
             if len(df_filtered) != len(df):
-                self.logger.info(f"Filtered out {len(df) - len(df_filtered)} trades that weren't filed on {today}")
+                self.logger.info(f"Filtered out {len(df) - len(df_filtered)} trades that weren't filed on {today} / {yesterday}")
             
             # If we got too many results, try fallback method
-            if len(df_filtered) > 20:  # Suspicious if more than 20 trades filed today
-                self.logger.warning(f"Got {len(df_filtered)} trades - this seems high. Trying fallback method...")
-                return self.fetch_today_trades_fallback()
+#            if len(df_filtered) > 20:  # Suspicious if more than 20 trades filed today
+#                self.logger.warning(f"Got {len(df_filtered)} trades - this seems high. Trying fallback method...")
+#                return self.fetch_today_trades_fallback()
             
             return df_filtered
         else:
@@ -153,7 +155,12 @@ class TodayInsiderPredictor:
                 start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
                 
                 df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=True)
-                if not df.empty:
+                if (ticker == 'SI') or (ticker == 'FIG'):
+                    print(ticker)
+                    print(df)
+                    print(start_date)
+                    print(end_date)
+                if (not df.empty) and (len(df) > 10):
                     # Reset index to get Date as a column
                     df.reset_index(inplace=True)
                     
@@ -164,6 +171,7 @@ class TodayInsiderPredictor:
                         df.set_index('Date', inplace=True)
                         self.prices_by_ticker[ticker] = df
                         valid_tickers.append(ticker)
+
                     else:
                         self.logger.warning(f"Missing required columns for {ticker}")
                 else:
@@ -200,7 +208,6 @@ class TodayInsiderPredictor:
         """Extract technical and fundamental features for a given trade."""
         ticker = row['Ticker']
         filing_date = row['resolved_filing_date']
-        
         # Ensure filing_date is a datetime
         if isinstance(filing_date, str):
             filing_date = pd.to_datetime(filing_date)
@@ -258,13 +265,12 @@ class TodayInsiderPredictor:
             
             start_date = df.index.asof(filing_date - pd.Timedelta(days=window_before))
             end_date = df.index.asof(filing_date + pd.Timedelta(days=window_after))
-            
             # Restrict to this window
             df = df.loc[start_date:end_date]
             
             # Compute technical features
             df = df.copy()  # Ensure we have a copy
-            
+
             # Check if 'Close' column exists and is a Series
             if 'Close' not in df.columns:
                 self.logger.error(f"'Close' column not found in {ticker}. Available columns: {df.columns}")
@@ -284,7 +290,7 @@ class TodayInsiderPredictor:
             
             if filing_date not in df.index:
                 filing_date = df.index.asof(filing_date)
-            
+
             features = df.loc[filing_date, ['Return', 'MA5', 'MA10', 'STD5', 'Volume_Change']]
             
             # Combine technical and fundamental features
@@ -308,8 +314,13 @@ class TodayInsiderPredictor:
             return pd.Series(result)
             
         except Exception as e:
+#            self.logger.error("------------------------ TOP ------------------------")
+            self.logger.error(f"Error extracting features for {df}")
             self.logger.error(f"Error extracting features for {ticker}: {e}")
-            self.logger.error(f"filing_date type: {type(filing_date)}, value: {filing_date}")
+#            self.logger.error("Full traceback:")
+#            self.logger.error(traceback.format_exc())
+#            self.logger.error(f"filing_date type: {type(filing_date)}, value: {filing_date}")
+#            self.logger.error("------------------------ Bottom ------------------------")
             return pd.Series(empty_return)
     
     def separate_titles(self, df):
@@ -326,7 +337,16 @@ class TodayInsiderPredictor:
         df['Trade Date'] = pd.to_datetime(df['Trade Date'])
         df['time_between'] = (df['Filing Date'] - df['Trade Date']).dt.days
         return df
-    
+
+    def add_current_price(self, row):
+        ticker = row['Ticker']
+        if ticker in self.prices_by_ticker:
+            # Get the most recent price as a scalar
+            current_price = self.prices_by_ticker[ticker]['Close'].iloc[-1].item()
+            return current_price
+        else:
+            return None
+
     def preprocess_data(self, df):
         """Preprocess the data for model prediction."""
         df = df.copy()
@@ -353,7 +373,8 @@ class TodayInsiderPredictor:
             'Price', 'Qty', 'Return', 'MA5', 'MA10', 'STD5', 'Volume_Change', 'Owned',
             'Role_10%', 'Role_CEO', 'Role_CFO', 'Role_CHIEF BANKING OFFICER', 'Role_COB', 'Role_COO', 'Role_CORP SECRET', 'Role_CRBT',
             'Role_Dir', 'Role_EVP', 'Role_Exec COB', 'Role_Former 10% Owner', 'Role_GC', 'Role_Pres', 'Role_QCRH', 'Role_SVP', 'time_between',
-            'MarketCap', 'Beta', 'EpsCurrentYear', 'FreeCashflow', 'HeldPercentInsiders', 'HeldPercentInstitutions', 'AverageVolume', 'Volume', 'EarningsTimestampStart', 'TimeToNextEarnings'
+            'MarketCap', 'Beta', 'EpsCurrentYear', 'FreeCashflow', 'HeldPercentInsiders', 'HeldPercentInstitutions', 'AverageVolume', 'Volume', 'EarningsTimestampStart', 'TimeToNextEarnings',
+            'total_trades', 'total_value', 'avg_trade_size', 'companies_traded', 'winning-trades'
         ]
         
         # Ensure all feature columns exist
@@ -365,7 +386,73 @@ class TodayInsiderPredictor:
         X = df[feature_cols]
         
         return X, df
-    
+
+    def return_date_range(self, date, beginning, day_size):
+            if beginning:
+                start_date = (date - pd.Timedelta(days=day_size))
+                start_date_str = start_date.strftime('%Y-%m-%d')
+                saturday_start_date = (start_date + pd.Timedelta(days=2)).strftime('%Y-%m-%d')
+                sunday_start_date = (start_date + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+                return [start_date_str, saturday_start_date, sunday_start_date]
+            else:
+                full_date = pd.to_datetime(date) + pd.Timedelta(days=day_size)
+                date = (full_date).strftime('%Y-%m-%d')
+                friday_end_date = (full_date - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+                three_days_before = (full_date - pd.Timedelta(days=3)).strftime('%Y-%m-%d')
+                thursday_end_date = (full_date - pd.Timedelta(days=2)).strftime('%Y-%m-%d')
+                saturday_end_date = (full_date + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+                sunday_end_date = (full_date + pd.Timedelta(days=2)).strftime('%Y-%m-%d')
+                monday_end_date = (full_date + pd.Timedelta(days=3)).strftime('%Y-%m-%d')
+                return ([date,thursday_end_date, friday_end_date, saturday_end_date, sunday_end_date, monday_end_date, three_days_before ])
+
+    def count_winning_trades(self, insider_trades, historical_prices):
+        result = 0
+        for _, entry in insider_trades[['Ticker' , 'Filing Date', 'Price']].iterrows():
+            price = float(re.sub(r'[\$,]', '', entry['Price']))
+            ticker = entry['Ticker']
+            possible_end_dates = self.return_date_range(entry['Filing Date'], False, 5 )
+            historical_prices_filtered = (historical_prices.loc[(historical_prices['Date'].isin(possible_end_dates)) &
+                                       (historical_prices["Ticker"] == ticker)]).sort_values('High', ascending=True)
+            if not historical_prices_filtered.empty:
+                if historical_prices_filtered.iloc[-1]['High'] > price:
+                    result = result + 1
+                else:
+                    result = result - 1
+                    
+        return result
+
+
+    def get_insider_history(self, insider_name, insiders_trades):
+        """Get all trades by a specific insider from your existing data"""
+        insider_trades = insiders_trades[insiders_trades['Insider Name'].str.contains(insider_name, case=False, na=False)]
+        
+        return insider_trades
+
+    def get_insider_stats(self, row): 
+        """Calculate stats for a specific insider"""
+        insider_info_df = pd.DataFrame({
+            'total_trades': pd.Series(dtype='float'),
+            'total_value': pd.Series(dtype='float'), 
+            'avg_trade_size': pd.Series(dtype='float'), 
+            'companies_traded': pd.Series(dtype='float'), 
+            'winning-trades': pd.Series(dtype='float')
+        })
+        insiders_trades = pd.read_csv("test-files/insider_trades.csv")
+        insiders_trades.columns = insiders_trades.columns.str.replace('\xa0', ' ').str.strip()
+        insiders_trades = pd.concat([insiders_trades, row.to_frame().T], ignore_index=True)
+        
+        
+        historical_prices = pd.read_csv("test-files/historical_prices.csv")
+        insider_name = row['Insider Name']
+        insider_trades = self.get_insider_history(insider_name, insiders_trades)
+        result = {
+            'total_trades': len(insider_trades),
+            'total_value': insider_trades['Value'].str.replace(r'[\$,+]', '', regex=True).astype(float).sum(),
+            'avg_trade_size': insider_trades['Value'].str.replace(r'[\$,+]', '', regex=True).astype(float).mean(),
+            'companies_traded': insider_trades['Ticker'].nunique(),
+            'winning-trades' : self.count_winning_trades(insider_trades, historical_prices ) }
+        return pd.Series(result)  
+
     def predict_trades(self):
         """Main function to fetch today's trades and predict which ones are likely to result in price increases."""
         self.logger.info("Starting prediction for today's insider trades...")
@@ -392,26 +479,31 @@ class TodayInsiderPredictor:
         # Extract technical features
         self.logger.info("Extracting technical features...")
         tech_features = today_trades.apply(self.extract_technical_features, axis=1)
+        
         tech_features.columns = [
             'Return', 'MA5', 'MA10', 'STD5', 'Volume_Change', 'MarketCap', 'Beta', 'EpsCurrentYear',
             'FreeCashflow', 'HeldPercentInsiders', 'HeldPercentInstitutions', 'AverageVolume', 'Volume', 'EarningsTimestampStart', 'TimeToNextEarnings'
         ]
-        
+        trader_history = today_trades.apply(self.get_insider_stats, axis=1)
+        trader_history.columns = ['total_trades', 'total_value', 'avg_trade_size', 'companies_traded', 'winning-trades'] 
+        print(len(tech_features))
+        print(len(trader_history))
+        print(len(today_trades))
         # Combine features
-        today_trades = pd.concat([today_trades.reset_index(drop=True), tech_features], axis=1)
+        today_trades = pd.concat([today_trades.reset_index(drop=True), tech_features, trader_history], axis=1)
         
+        #today_trades = pd.concat([today_trades.reset_index(drop=True), trader_history], axis=1)
         # Remove unnecessary columns if present
         for col in ['X', '1d', '1w', '1m', '6m']:
             if col in today_trades.columns:
                 today_trades.drop(columns=col, inplace=True)
-        
+
         # Preprocess for prediction
         X, processed_df = self.preprocess_data(today_trades)
         
         # Make predictions
         self.logger.info("Making predictions...")
         predictions, probabilities = self.predict_with_threshold(X)
-        
         # Add predictions to the dataframe
         processed_df['predicted_class'] = predictions
         processed_df['prediction_probability'] = probabilities
@@ -428,10 +520,11 @@ class TodayInsiderPredictor:
             # Select relevant columns for output
             output_columns = [
                 'Ticker', 'Company', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value',
-                'prediction_probability', 'Filing Date', 'Trade Date'
+                'prediction_probability', 'Filing Date', 'Trade Date', 'Current_Price'
             ]
             
             # Only include columns that exist
+            positive_predictions['Current_Price'] = positive_predictions.apply(self.add_current_price, axis=1)
             available_columns = [col for col in output_columns if col in positive_predictions.columns]
             result = positive_predictions[available_columns]
             
@@ -440,10 +533,42 @@ class TodayInsiderPredictor:
             self.logger.info("No trades predicted to result in price increases")
             return pd.DataFrame()
     
+    def check_importance (self, probs, predictions): 
+        # Get feature importance (works for RandomForest, XGBoost, etc.)
+        if hasattr(self.model, 'feature_importances_'):
+            importance = self.model.feature_importances_
+            print(importance)
+            
+            feature_names = ['Price', 'Qty', 'Return', 'MA5', 'MA10', 'STD5', 'Volume_Change',
+       'Owned', 'Role_10%', 'Role_CEO', 'Role_CFO',
+       'Role_CHIEF BANKING OFFICER', 'Role_COB', 'Role_COO',
+       'Role_CORP SECRET', 'Role_CRBT', 'Role_Dir', 'Role_EVP',
+       'Role_Exec COB', 'Role_Former 10% Owner', 'Role_GC', 'Role_Pres',
+       'Role_QCRH', 'Role_SVP', 'time_between', 'MarketCap', 'Beta',
+       'EpsCurrentYear', 'FreeCashflow', 'HeldPercentInsiders',
+       'HeldPercentInstitutions', 'AverageVolume', 'Volume',
+       'EarningsTimestampStart', 'TimeToNextEarnings',
+       'total_trades', 'total_value', 'avg_trade_size', 'companies_traded', 'winning-trades']
+            plot_importance(self.model, importance_type='gain')
+            # Create importance DataFrame and sort
+            importance_df = pd.DataFrame({
+                'feature': feature_names,
+                'importance': importance
+            }).sort_values('importance', ascending=False)
+            
+            print("Top 10 Most Important Features:")
+            print(importance_df)
+            
+            return predictions, probs, importance_df
+        else:
+            print("Model doesn't have built-in feature importance")
+            return predictions, probs, None
+
     def predict_with_threshold(self, X):
         """Make predictions using the custom threshold."""
         probs = self.model.predict_proba(X)[:, 1]
         predictions = (probs >= self.threshold).astype(int)
+        self.check_importance(probs, predictions)
         return predictions, probs
 
 def main():
