@@ -437,12 +437,12 @@ class TodayInsiderPredictor:
             'companies_traded': pd.Series(dtype='float'), 
             'winning-trades': pd.Series(dtype='float')
         })
-        insiders_trades = pd.read_csv("test-files/insider_trades.csv")
+        insiders_trades = pd.read_csv("insider_trades_3.csv")
         insiders_trades.columns = insiders_trades.columns.str.replace('\xa0', ' ').str.strip()
         insiders_trades = pd.concat([insiders_trades, row.to_frame().T], ignore_index=True)
         
         
-        historical_prices = pd.read_csv("test-files/historical_prices.csv")
+        historical_prices = pd.read_csv("historical_prices_3.csv")
         insider_name = row['Insider Name']
         insider_trades = self.get_insider_history(insider_name, insiders_trades)
         result = {
