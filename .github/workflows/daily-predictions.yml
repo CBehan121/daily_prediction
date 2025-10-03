@@ -11,6 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: pull-insider-trades 
+      script:
+        - echo "Fetching CSV from private GitLab repo..."
+        - curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
+              "https://gitlab.com/api/v4/projects/CSV-storage/repository/files/insider_trades_3.csv/raw?ref=main" \
+              -o insider_trades_3.csv     
+    - name: pull-historical-prices
+      script:
+        - echo "Fetching CSV from private GitLab repo..."
+        - curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
+              "https://gitlab.com/api/v4/projects/CSV-storage/repository/files/historical_prices_3.csv/raw?ref=main" \
+              -o historical_prices_3.csv
     - name: Checkout code
       uses: actions/checkout@v3
       
