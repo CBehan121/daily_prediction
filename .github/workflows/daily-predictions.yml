@@ -23,27 +23,32 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Pull insider trades CSV
-      run: |
-        echo "Fetching CSV from private GitLab repo..."
-        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
-             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/insider_trades_3.csv/raw?ref=main" \
-             -o insider_trades_3.csv
 
-    - name: Pull historical prices CSV
-      run: |
-        echo "Fetching CSV from private GitLab repo..."
-        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
-             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/historical_prices_3.csv/raw?ref=main" \
-             -o historical_prices_3.csv
-    - name: Pull stock fundamentals CSV
-      run: |
-        echo "Fetching CSV from private GitLab repo..."
-        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
-             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/stock_fundamentals.csv.csv/raw?ref=main" \
-             -o stock_fundamentals.csv
-
+#    - name: Pull insider trades CSV
+#      run: |
+#        echo "Fetching CSV from private GitLab repo..."
+#        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
+#             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/insider_trades_3.csv/raw?ref=main" \
+#             -o insider_trades_3.csv
+#
+#    - name: Pull historical prices CSV
+#      run: |
+#        echo "Fetching CSV from private GitLab repo..."
+#        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
+#             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/historical_prices_3.csv/raw?ref=main" \
+#             -o historical_prices_3.csv
+#    - name: Pull stock fundamentals CSV
+#      run: |
+#        echo "Fetching CSV from private GitLab repo..."
+#        curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
+#             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/stock_fundamentals.csv.csv/raw?ref=main" \
+#             -o stock_fundamentals.csv
+    - name: Checkout CSV repo
+      uses: actions/checkout@v3
+      with:
+        repository: CBehan121/CSV-storage
+        token: ${{ secrets.access }}
+        path: up-to-date
     - name: Run predictions
       run: |
         python predict_today_trades.py

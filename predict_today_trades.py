@@ -134,7 +134,7 @@ class TodayInsiderPredictor:
     def load_fundamental_data(self):
         """Load fundamental data for all tickers."""
         try:
-            self.fundamental_data = pd.read_csv('stock_fundamentals.csv')
+            self.fundamental_data = pd.read_csv('up-to-date/stock_fundamentals.csv')
             self.logger.info(f"Loaded fundamental data for {len(self.fundamental_data)} tickers")
         except FileNotFoundError:
             self.logger.warning("Fundamental data not found. Will skip fundamental features.")
@@ -168,8 +168,6 @@ class TodayInsiderPredictor:
                     required_cols = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
                     if all(col in df.columns for col in required_cols):
                         # Set Date as index
-                        print('In get historical prices')
-                        print(df.columns)
                         df.set_index('Date', inplace=True)
                         self.prices_by_ticker[ticker] = df
                         valid_tickers.append(ticker)
@@ -413,8 +411,6 @@ class TodayInsiderPredictor:
             price = float(re.sub(r'[\$,]', '', entry['Price']))
             ticker = entry['Ticker']
             possible_end_dates = self.return_date_range(entry['Filing Date'], False, 5 )
-            print('In Count')
-            print(historical_prices.columns)
             historical_prices_filtered = (historical_prices.loc[(historical_prices['Date'].isin(possible_end_dates)) &
                                        (historical_prices["Ticker"] == ticker)]).sort_values('High', ascending=True)
             if not historical_prices_filtered.empty:
@@ -441,12 +437,12 @@ class TodayInsiderPredictor:
             'companies_traded': pd.Series(dtype='float'), 
             'winning-trades': pd.Series(dtype='float')
         })
-        insiders_trades = pd.read_csv("insider_trades_3.csv")
+        insiders_trades = pd.read_csv("up-to-date/insider_trades_3.csv")
         insiders_trades.columns = insiders_trades.columns.str.replace('\xa0', ' ').str.strip()
         insiders_trades = pd.concat([insiders_trades, row.to_frame().T], ignore_index=True)
         
         
-        historical_prices = pd.read_csv("historical_prices_3.csv")
+        historical_prices = pd.read_csv("up-to-date/historical_prices_3.csv")
         insider_name = row['Insider Name']
         insider_trades = self.get_insider_history(insider_name, insiders_trades)
         result = {
