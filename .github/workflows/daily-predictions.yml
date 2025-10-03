@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
     - name: Pull insider trades CSV
       run: |
         echo "Fetching CSV from private GitLab repo..."
@@ -28,7 +30,7 @@ jobs:
       run: |
         echo "Fetching CSV from private GitLab repo..."
         curl --header "PRIVATE-TOKEN: ${{ secrets.access }}" \
-             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/stock_fundamentals.csv/raw?ref=main" \
+             "https://gitlab.com/api/v4/projects/<PROJECT_ID>/repository/files/stock_fundamentals.csv.csv/raw?ref=main" \
              -o stock_fundamentals.csv
     - name: Checkout code
       uses: actions/checkout@v3
